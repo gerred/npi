@@ -1309,12 +1309,56 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Content shrunk below the working area and no overlays - re-render to clear empty rows
-		// (overlays need the padding, so only do this when no overlays are active)
-		// Configurable via setClearOnShrink() or PI_CLEAR_ON_SHRINK=0 env var
-		if (this.clearOnShrink && newLines.length < this.maxLinesRendered && this.overlayStack.length === 0) {
-			logRedraw(`clearOnShrink (maxLinesRendered=${this.maxLinesRendered})`);
-			fullRender(true);
+		const redrawViewport = (nextViewportTop: number): void => {
+			let buffer = "\x1b[?2026h";
+			buffer += this.deleteChangedKittyImages(prevViewportTop, prevViewportTop + height - 1);
+
+			let screenRow = 0;
+			while (screenRow < height) {
+				const lineIndex = nextViewportTop + screenRow;
+				const line = newLines[lineIndex] ?? "";
+				const isImage = isImageLine(line);
+				const imageReservedRows = isImage
+					? this.getKittyImageReservedRows(newLines, lineIndex, nextViewportTop + height - 1)
+					: 1;
+
+				buffer += `\x1b[${screenRow + 1};1H`;
+				buffer += "\x1b[2K";
+
+				if (isImage && imageReservedRows > 1 && screenRow + imageReservedRows <= height) {
+					for (let row = 1; row < imageReservedRows; row++) {
+						buffer += `\x1b[${screenRow + row + 1};1H`;
+						buffer += "\x1b[2K";
+					}
+					buffer += `\x1b[${screenRow + 1};1H`;
+					buffer += line;
+					screenRow += imageReservedRows;
+					continue;
+				}
+
+				buffer += line;
+				screenRow += 1;
+			}
+
+			buffer += "\x1b[?2026l";
+			this.terminal.write(buffer);
+			this.cursorRow = Math.max(0, newLines.length - 1);
+			this.hardwareCursorRow = nextViewportTop + height - 1;
+			this.maxLinesRendered = newLines.length;
+			this.previousViewportTop = nextViewportTop;
+			this.positionHardwareCursor(cursorPos, newLines.length);
+			this.previousLines = newLines;
+			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
+			this.previousWidth = width;
+			this.previousHeight = height;
+		};
+
+		const shrinkClearEnabled =
+			this.clearOnShrink && newLines.length < this.maxLinesRendered && this.overlayStack.length === 0;
+		const shrinkViewportTop = Math.max(0, newLines.length - height);
+		if (shrinkClearEnabled && shrinkViewportTop < prevViewportTop) {
+			logRedraw(`clearOnShrink viewport redraw (maxLinesRendered=${this.maxLinesRendered})`);
+			redrawViewport(shrinkViewportTop);
 			return;
 		}
 
@@ -1364,7 +1408,11 @@ export class TUI extends Container {
 				const targetRow = Math.max(0, newLines.length - 1);
 				if (targetRow < prevViewportTop) {
 					logRedraw(`deleted lines moved viewport up (${targetRow} < ${prevViewportTop})`);
-					fullRender(true);
+					if (shrinkClearEnabled) {
+						redrawViewport(shrinkViewportTop);
+					} else {
+						fullRender(true);
+					}
 					return;
 				}
 				const lineDiff = computeLineDiff(targetRow);
@@ -1375,7 +1423,11 @@ export class TUI extends Container {
 				const extraLines = this.previousLines.length - newLines.length;
 				if (extraLines > height) {
 					logRedraw(`extraLines > height (${extraLines} > ${height})`);
-					fullRender(true);
+					if (shrinkClearEnabled) {
+						redrawViewport(shrinkViewportTop);
+					} else {
+						fullRender(true);
+					}
 					return;
 				}
 				const clearStartOffset = newLines.length === 0 ? 0 : 1;
@@ -1408,7 +1460,11 @@ export class TUI extends Container {
 		// If the first changed line is above the previous viewport, we need a full redraw.
 		if (firstChanged < prevViewportTop) {
 			logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
-			fullRender(true);
+			if (shrinkClearEnabled) {
+				redrawViewport(shrinkViewportTop);
+			} else {
+				fullRender(true);
+			}
 			return;
 		}
 

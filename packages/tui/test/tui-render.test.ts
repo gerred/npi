@@ -61,8 +61,12 @@ async function withEnv<T>(updates: Record<string, string | undefined>, run: () =
 	}
 }
 
+function getXterm(terminal: VirtualTerminal): XtermTerminalType {
+	return (terminal as unknown as { xterm: XtermTerminalType }).xterm;
+}
+
 function getCellItalic(terminal: VirtualTerminal, row: number, col: number): number {
-	const xterm = (terminal as unknown as { xterm: XtermTerminalType }).xterm;
+	const xterm = getXterm(terminal);
 	const buffer = xterm.buffer.active;
 	const line = buffer.getLine(buffer.viewportY + row);
 	assert.ok(line, `Missing buffer line at row ${row}`);
@@ -402,8 +406,8 @@ describe("TUI resize handling", () => {
 });
 
 describe("TUI content shrinkage", () => {
-	it("clears empty rows when content shrinks significantly", async () => {
-		const terminal = new VirtualTerminal(40, 10);
+	it("clears empty rows differentially when content shrinks significantly", async () => {
+		const terminal = new LoggingVirtualTerminal(40, 10);
 		const tui = new TUI(terminal);
 		tui.setClearOnShrink(true); // Explicitly enable (may be disabled via env var)
 		const component = new TestComponent();
@@ -415,14 +419,16 @@ describe("TUI content shrinkage", () => {
 		await terminal.waitForRender();
 
 		const initialRedraws = tui.fullRedraws;
+		terminal.clearWrites();
 
 		// Shrink to fewer lines
 		component.lines = ["Line 0", "Line 1"];
 		tui.requestRender();
 		await terminal.waitForRender();
 
-		// Should have triggered a full redraw to clear empty rows
-		assert.ok(tui.fullRedraws > initialRedraws, "Content shrinkage should trigger full redraw");
+		assert.strictEqual(tui.fullRedraws, initialRedraws, "Content shrinkage should stay on the differential path");
+		assert.ok(!terminal.getWrites().includes("\x1b[2J"), "Differential shrink should not clear the whole screen");
+		assert.ok(!terminal.getWrites().includes("\x1b[3J"), "Differential shrink should not clear scrollback");
 
 		const viewport = terminal.getViewport();
 		assert.ok(viewport[0]?.includes("Line 0"), "First line preserved");
@@ -430,6 +436,93 @@ describe("TUI content shrinkage", () => {
 		// Lines below should be empty (cleared)
 		assert.strictEqual(viewport[2]?.trim(), "", "Line 2 should be cleared");
 		assert.strictEqual(viewport[3]?.trim(), "", "Line 3 should be cleared");
+
+		tui.stop();
+	});
+
+	it("preserves detached scrollback viewport when clearOnShrink redraws the viewport", async () => {
+		const terminal = new LoggingVirtualTerminal(20, 5);
+		const tui = new TUI(terminal);
+		tui.setClearOnShrink(true);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = Array.from({ length: 20 }, (_, i) => `Line ${i}`);
+		tui.start();
+		await terminal.waitForRender();
+
+		const initialRedraws = tui.fullRedraws;
+		terminal.clearWrites();
+		const xterm = getXterm(terminal);
+		xterm.scrollLines(-10);
+		const viewportYBefore = xterm.buffer.active.viewportY;
+		const viewportBefore = terminal.getViewport();
+
+		component.lines = Array.from({ length: 18 }, (_, i) => `Line ${i}`);
+		tui.requestRender();
+		await terminal.waitForRender();
+
+		assert.strictEqual(tui.fullRedraws, initialRedraws, "Tall shrink should avoid the full-render path");
+		assert.ok(!terminal.getWrites().includes("\x1b[2J"), "Tall shrink should not clear the whole screen");
+		assert.ok(!terminal.getWrites().includes("\x1b[3J"), "Tall shrink should not clear scrollback");
+		assert.strictEqual(
+			xterm.buffer.active.viewportY,
+			viewportYBefore,
+			"Detached viewport position should be preserved",
+		);
+		assert.deepStrictEqual(terminal.getViewport(), viewportBefore);
+
+		tui.stop();
+	});
+
+	it("keeps the bottom pinned when clearOnShrink redraws the viewport", async () => {
+		const terminal = new LoggingVirtualTerminal(20, 5);
+		const tui = new TUI(terminal);
+		tui.setClearOnShrink(true);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = Array.from({ length: 20 }, (_, i) => `Line ${i}`);
+		tui.start();
+		await terminal.waitForRender();
+
+		const initialRedraws = tui.fullRedraws;
+		terminal.clearWrites();
+
+		component.lines = Array.from({ length: 18 }, (_, i) => `Line ${i}`);
+		tui.requestRender();
+		await terminal.waitForRender();
+
+		assert.strictEqual(tui.fullRedraws, initialRedraws, "Tall shrink should avoid the full-render path");
+		assert.ok(!terminal.getWrites().includes("\x1b[2J"), "Tall shrink should not clear the whole screen");
+		assert.ok(!terminal.getWrites().includes("\x1b[3J"), "Tall shrink should not clear scrollback");
+		assert.deepStrictEqual(terminal.getViewport(), ["Line 13", "Line 14", "Line 15", "Line 16", "Line 17"]);
+
+		tui.stop();
+	});
+
+	it("redraws shrink viewport rows independently when lines fill the terminal width", async () => {
+		const terminal = new LoggingVirtualTerminal(20, 5);
+		const tui = new TUI(terminal);
+		tui.setClearOnShrink(true);
+		const component = new TestComponent();
+		tui.addChild(component);
+		const makeLine = (index: number): string => `Line ${index.toString().padStart(2, "0")} ${"x".repeat(12)}`;
+
+		component.lines = Array.from({ length: 20 }, (_, i) => makeLine(i));
+		tui.start();
+		await terminal.waitForRender();
+		terminal.clearWrites();
+
+		component.lines = Array.from({ length: 18 }, (_, i) => makeLine(i));
+		tui.requestRender();
+		await terminal.waitForRender();
+
+		assert.ok(!terminal.getWrites().includes("\r\n"), "Viewport redraw should not depend on newline row advances");
+		assert.deepStrictEqual(
+			terminal.getViewport(),
+			[13, 14, 15, 16, 17].map((index) => makeLine(index)),
+		);
 
 		tui.stop();
 	});
