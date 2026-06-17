@@ -6,6 +6,7 @@ import {
 	Input,
 	type Keybinding,
 	Spacer,
+	sliceByColumn,
 	Text,
 	truncateToWidth,
 	visibleWidth,
@@ -35,6 +36,61 @@ interface FlatNode {
 	gutters: GutterInfo[];
 	/** True if this node is a root under a virtual branching root (multiple roots) */
 	isVirtualRootChild: boolean;
+}
+
+interface HorizontalViewportRow {
+	gutter: string;
+	body: string;
+	anchorCol: number;
+	bodyWidth: number;
+	isSelected: boolean;
+}
+
+interface HorizontalViewportResult {
+	lines: string[];
+	status: string;
+}
+
+const TREE_GUTTER_WIDTH = 2;
+const MIN_VISIBLE_ANCHOR_CONTENT_WIDTH = 4;
+const MAX_VISIBLE_ANCHOR_CONTENT_WIDTH = 20;
+const MIN_ANCHOR_CONTEXT_WIDTH = 2;
+const MAX_ANCHOR_CONTEXT_WIDTH = 12;
+
+function renderHorizontalViewport(rows: HorizontalViewportRow[], width: number): HorizontalViewportResult {
+	const viewportWidth = Math.max(0, width - TREE_GUTTER_WIDTH);
+	const maxBodyWidth = rows.reduce((max, row) => Math.max(max, row.bodyWidth), 0);
+	const maxHorizontalScroll = Math.max(0, maxBodyWidth - viewportWidth);
+	let horizontalScroll = 0;
+	const selectedRow = rows.find((row) => row.isSelected);
+
+	if (selectedRow && maxHorizontalScroll > 0) {
+		const minVisibleAnchorContentWidth = Math.min(
+			MAX_VISIBLE_ANCHOR_CONTENT_WIDTH,
+			Math.max(MIN_VISIBLE_ANCHOR_CONTENT_WIDTH, Math.floor(viewportWidth / 3)),
+		);
+		if (selectedRow.anchorCol > viewportWidth - minVisibleAnchorContentWidth) {
+			const anchorContextWidth = Math.min(
+				MAX_ANCHOR_CONTEXT_WIDTH,
+				Math.max(MIN_ANCHOR_CONTEXT_WIDTH, Math.floor(viewportWidth / 4)),
+			);
+			horizontalScroll = Math.min(maxHorizontalScroll, selectedRow.anchorCol - anchorContextWidth);
+		}
+	}
+
+	const lines = rows.map((row) => {
+		const line =
+			horizontalScroll > 0
+				? `${row.gutter}${sliceByColumn(row.body, horizontalScroll, viewportWidth, true)}\x1b[0m`
+				: row.gutter + row.body;
+		return truncateToWidth(line, width, "");
+	});
+	const status =
+		maxHorizontalScroll > 0
+			? ` [cols ${horizontalScroll + 1}-${Math.min(maxBodyWidth, horizontalScroll + viewportWidth)}/${maxBodyWidth}]`
+			: "";
+
+	return { lines, status };
 }
 
 /** Filter mode for tree display */
@@ -619,6 +675,8 @@ class TreeList implements Component {
 		);
 		const endIndex = Math.min(startIndex + this.maxVisibleLines, this.filteredNodes.length);
 
+		const renderedRows: HorizontalViewportRow[] = [];
+
 		for (let i = startIndex; i < endIndex; i++) {
 			const flatNode = this.filteredNodes[i];
 			const entry = flatNode.node.entry;
@@ -682,17 +740,25 @@ class TreeList implements Component {
 					? theme.fg("muted", `${this.formatLabelTimestamp(flatNode.node.labelTimestamp)} `)
 					: "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
-
-			let line = cursor + theme.fg("dim", prefix) + foldMarker + pathMarker + label + labelTimestamp + content;
+			const prefixPart = theme.fg("dim", prefix) + foldMarker + pathMarker;
+			const anchorCol = visibleWidth(prefixPart);
+			let gutter = cursor;
+			let body = prefixPart + label + labelTimestamp + content;
 			if (isSelected) {
-				line = theme.bg("selectedBg", line);
+				gutter = theme.bg("selectedBg", gutter);
+				body = theme.bg("selectedBg", body);
 			}
-			lines.push(truncateToWidth(line, width));
+			renderedRows.push({ gutter, body, anchorCol, bodyWidth: visibleWidth(body), isSelected });
 		}
 
+		const viewport = renderHorizontalViewport(renderedRows, width);
+		lines.push(...viewport.lines);
 		lines.push(
 			truncateToWidth(
-				theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredNodes.length})${this.getStatusLabels()}`),
+				theme.fg(
+					"muted",
+					`  (${this.selectedIndex + 1}/${this.filteredNodes.length})${this.getStatusLabels()}${viewport.status}`,
+				),
 				width,
 			),
 		);

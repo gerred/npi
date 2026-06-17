@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Exported `sliceByColumn()` for ANSI-aware horizontal viewport rendering.
+
 ## [0.79.6] - 2026-06-16
 
 ## [0.79.5] - 2026-06-16

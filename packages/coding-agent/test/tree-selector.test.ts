@@ -272,6 +272,35 @@ describe("TreeSelectorComponent", () => {
 		});
 	});
 
+	describe("horizontal scrolling", () => {
+		test("keeps deeply indented selected entries readable", () => {
+			const entries: SessionEntry[] = [userMessage("root", null, "root")];
+			let parentId = "root";
+			let selectedId = parentId;
+			for (let depth = 1; depth <= 14; depth++) {
+				selectedId = `active-${depth}`;
+				entries.push(userMessage(selectedId, parentId, `deep focused entry ${depth} marker-${depth}`));
+				entries.push(userMessage(`side-${depth}`, parentId, `side branch ${depth}`));
+				parentId = selectedId;
+			}
+
+			const selector = new TreeSelectorComponent(
+				buildTree(entries),
+				selectedId,
+				24,
+				() => {},
+				() => {},
+			);
+
+			const plainLines = selector.getTreeList().render(50).map(stripVTControlCharacters);
+			const selectedLine = plainLines.find((line) => line.includes("›"));
+
+			expect(selectedLine).toContain("user: deep focused entry 14");
+			expect(plainLines.every((line) => visibleWidth(line) <= 50)).toBe(true);
+			expect(plainLines.at(-1)).toContain("cols");
+		});
+	});
+
 	describe("label timestamps", () => {
 		test("toggles label timestamps for labeled nodes", () => {
 			const entries = [userMessage("user-1", null, "hello"), assistantMessage("asst-1", "user-1", "hi")];

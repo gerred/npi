@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `/tree` to horizontally pan deep session branches so the selected entry text remains readable ([#5830](https://github.com/earendil-works/pi/issues/5830)).
+
 ## [0.79.6] - 2026-06-16
 
 ### Fixed
