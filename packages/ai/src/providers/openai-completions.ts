@@ -37,6 +37,7 @@ import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
+import { createNoumenaOpenAICompatWsV2Fetch, shouldUseNoumenaOpenAICompatWsV2 } from "./noumena-ws-v2-native.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { buildBaseOptions } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
@@ -144,7 +145,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			const compat = getCompat(model);
 			const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 			const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
-			const client = createClient(model, context, apiKey, options?.headers, cacheSessionId, compat, options?.env);
+			const client = createClient(model, context, apiKey, options?.headers, cacheSessionId, compat, options);
 			let params = buildParams(model, context, options, compat, cacheRetention);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -456,7 +457,7 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 	sessionId?: string,
 	compat: ResolvedOpenAICompletionsCompat = getCompat(model),
-	env?: ProviderEnv,
+	options?: OpenAICompletionsOptions,
 ) {
 	const headers = { ...model.headers };
 	if (model.provider === "github-copilot") {
@@ -487,12 +488,29 @@ function createClient(
 					"cf-aig-authorization": `Bearer ${apiKey}`,
 				}
 			: headers;
+	const baseURL = isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model, options?.env) : model.baseUrl;
+	const fetch =
+		typeof globalThis.fetch === "function" &&
+		shouldUseNoumenaOpenAICompatWsV2({
+			baseUrl: baseURL,
+			env: options?.env,
+			provider: model.provider,
+			transport: options?.transport,
+		})
+			? createNoumenaOpenAICompatWsV2Fetch(globalThis.fetch.bind(globalThis), {
+					env: options?.env,
+					timeoutMs: options?.timeoutMs,
+					transport: options?.transport,
+					websocketConnectTimeoutMs: options?.websocketConnectTimeoutMs,
+				})
+			: undefined;
 
 	return new OpenAI({
 		apiKey,
-		baseURL: isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model, env) : model.baseUrl,
+		baseURL,
 		dangerouslyAllowBrowser: true,
 		defaultHeaders,
+		fetch,
 	});
 }
 
@@ -507,7 +525,7 @@ function buildParams(
 	const cacheControl = getCompatCacheControl(compat, cacheRetention);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
-		model: model.id,
+		model: model.requestModel ?? model.id,
 		messages,
 		stream: true,
 		prompt_cache_key:
@@ -600,6 +618,25 @@ function buildParams(
 		const effort = model.thinkingLevelMap?.[options.reasoningEffort];
 		if (typeof effort === "string") {
 			(params as typeof params & { reasoning?: { effort: string } }).reasoning = { effort };
+		}
+	} else if (compat.thinkingFormat === "noumena" && model.reasoning) {
+		const noumenaParams = params as Omit<typeof params, "reasoning_effort"> & {
+			separate_reasoning?: boolean;
+			stream_reasoning?: boolean;
+			reasoning_effort?: string;
+			chat_template_kwargs?: { thinking: boolean; enable_thinking: boolean };
+		};
+		const effort = options?.reasoningEffort
+			? (model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort)
+			: model.thinkingLevelMap?.off;
+		if (typeof effort === "string" && effort !== "none") {
+			noumenaParams.separate_reasoning = true;
+			noumenaParams.stream_reasoning = true;
+			noumenaParams.reasoning_effort = effort;
+			noumenaParams.chat_template_kwargs = { thinking: true, enable_thinking: true };
+		} else if (effort === "none") {
+			noumenaParams.reasoning_effort = "none";
+			noumenaParams.chat_template_kwargs = { thinking: false, enable_thinking: false };
 		}
 	} else if (compat.thinkingFormat === "together" && model.reasoning) {
 		const togetherParams = params as Omit<typeof params, "reasoning_effort"> & {
@@ -1107,8 +1144,10 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 	const isCloudflareAiGateway = provider === "cloudflare-ai-gateway" || baseUrl.includes("gateway.ai.cloudflare.com");
 	const isNvidia = provider === "nvidia" || baseUrl.includes("integrate.api.nvidia.com");
 	const isAntLing = provider === "ant-ling" || baseUrl.includes("api.ant-ling.com");
+	const isNoumena = provider === "noumena" || baseUrl.includes("api.noumena.com");
 
 	const isNonStandard =
+		isNoumena ||
 		isNvidia ||
 		provider === "cerebras" ||
 		baseUrl.includes("cerebras.ai") ||
@@ -1126,7 +1165,13 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		isAntLing;
 
 	const useMaxTokens =
-		baseUrl.includes("chutes.ai") || isMoonshot || isCloudflareAiGateway || isTogether || isNvidia || isAntLing;
+		baseUrl.includes("chutes.ai") ||
+		isMoonshot ||
+		isCloudflareAiGateway ||
+		isTogether ||
+		isNvidia ||
+		isAntLing ||
+		isNoumena;
 
 	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
 	const isDeepSeek = provider === "deepseek" || baseUrl.includes("deepseek.com");
@@ -1138,7 +1183,14 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: isOpenRouterDeveloperRoleModel || (!isNonStandard && !isOpenRouter),
 		supportsReasoningEffort:
-			!isGrok && !isZai && !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia && !isAntLing,
+			!isGrok &&
+			!isZai &&
+			!isMoonshot &&
+			!isTogether &&
+			!isCloudflareAiGateway &&
+			!isNvidia &&
+			!isAntLing &&
+			!isNoumena,
 		supportsUsageInStreaming: true,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
 		requiresToolResultName: false,
@@ -1151,15 +1203,17 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 				? "zai"
 				: isTogether
 					? "together"
-					: isAntLing
-						? "ant-ling"
-						: isOpenRouter
-							? "openrouter"
-							: "openai",
+					: isNoumena
+						? "noumena"
+						: isAntLing
+							? "ant-ling"
+							: isOpenRouter
+								? "openrouter"
+								: "openai",
 		openRouterRouting: {},
 		vercelGatewayRouting: {},
 		zaiToolStream: false,
-		supportsStrictMode: !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia,
+		supportsStrictMode: !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia && !isNoumena,
 		cacheControlFormat,
 		sendSessionAffinityHeaders: false,
 		supportsLongCacheRetention: !(
@@ -1167,7 +1221,8 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 			isCloudflareWorkersAI ||
 			isCloudflareAiGateway ||
 			isNvidia ||
-			isAntLing
+			isAntLing ||
+			isNoumena
 		),
 	};
 }

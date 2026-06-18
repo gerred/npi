@@ -5,6 +5,8 @@
 ### Added
 
 - Added the OpenRouter Fusion alias as `openrouter/fusion` ([#5866](https://github.com/earendil-works/pi/pull/5866) by [@dannote](https://github.com/dannote)).
+- Added Noumena OAuth and Kimi 2.7 Coder model metadata.
+- Added a native Rust/N-API Noumena OpenAI-compatible WS v2 transport with SSE fallback.
 
 ## [0.79.7] - 2026-06-18
 

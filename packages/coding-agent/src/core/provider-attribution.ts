@@ -1,4 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { APP_NAME } from "../config.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import { isInstallTelemetryEnabled } from "./telemetry.ts";
 
@@ -49,7 +50,7 @@ function getDefaultAttributionHeaders(
 	if (isOpenRouterModel(model)) {
 		return {
 			"HTTP-Referer": "https://pi.dev",
-			"X-OpenRouter-Title": "pi",
+			"X-OpenRouter-Title": APP_NAME,
 			"X-OpenRouter-Categories": "cli-agent",
 		};
 	}
@@ -62,14 +63,14 @@ function getDefaultAttributionHeaders(
 
 	if (isCloudflareModel(model)) {
 		return {
-			"User-Agent": "pi-coding-agent",
+			"User-Agent": `${APP_NAME}-coding-agent`,
 		};
 	}
 
 	if (isVercelGatewayModel(model)) {
 		return {
 			"http-referer": "https://pi.dev",
-			"x-title": "pi",
+			"x-title": APP_NAME,
 		};
 	}
 
@@ -85,7 +86,7 @@ function getSessionHeaders(model: Model<Api>, sessionId: string | undefined): Re
 	) {
 		return undefined;
 	}
-	return { "x-opencode-session": sessionId, "x-opencode-client": "pi" };
+	return { "x-opencode-session": sessionId, "x-opencode-client": APP_NAME };
 }
 
 export function mergeProviderAttributionHeaders(

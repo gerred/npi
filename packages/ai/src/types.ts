@@ -29,6 +29,7 @@ export type KnownProvider =
 	| "openai"
 	| "azure-openai-responses"
 	| "openai-codex"
+	| "noumena"
 	| "nvidia"
 	| "deepseek"
 	| "github-copilot"
@@ -403,7 +404,7 @@ export interface OpenAICompletionsCompat {
 	requiresThinkingAsText?: boolean;
 	/** Whether all replayed assistant messages must include an empty reasoning_content field when reasoning is enabled. Default: auto-detected from URL. */
 	requiresReasoningContentOnAssistantMessages?: boolean;
-	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "openrouter" uses reasoning: { effort }, "deepseek" uses thinking: { type } plus reasoning_effort when supported, "together" uses reasoning: { enabled } plus reasoning_effort when supported, "zai" uses thinking: { type }, "qwen" uses top-level enable_thinking: boolean, "qwen-chat-template" uses chat_template_kwargs.enable_thinking, "string-thinking" uses top-level thinking: string, and "ant-ling" uses reasoning: { effort } only when the mapped effort is non-null. Default: "openai". */
+	/** Format for reasoning/thinking parameter. "openai" uses reasoning_effort, "openrouter" uses reasoning: { effort }, "deepseek" uses thinking: { type } plus reasoning_effort when supported, "together" uses reasoning: { enabled } plus reasoning_effort when supported, "zai" uses thinking: { type }, "qwen" uses top-level enable_thinking: boolean, "qwen-chat-template" uses chat_template_kwargs.enable_thinking, "string-thinking" uses top-level thinking: string, "ant-ling" uses reasoning: { effort } only when the mapped effort is non-null, and "noumena" uses Noumena's Kimi reasoning fields. Default: "openai". */
 	thinkingFormat?:
 		| "openai"
 		| "openrouter"
@@ -413,7 +414,8 @@ export interface OpenAICompletionsCompat {
 		| "qwen"
 		| "qwen-chat-template"
 		| "string-thinking"
-		| "ant-ling";
+		| "ant-ling"
+		| "noumena";
 	/** OpenRouter-compatible routing preferences sent as the `provider` request field. */
 	openRouterRouting?: OpenRouterRouting;
 	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
@@ -579,6 +581,8 @@ export interface VercelGatewayRouting {
 export interface Model<TApi extends Api> {
 	id: string;
 	name: string;
+	/** Optional provider-native model id to send on the wire when the pi model id is an alias. */
+	requestModel?: string;
 	api: TApi;
 	provider: Provider;
 	baseUrl: string;
