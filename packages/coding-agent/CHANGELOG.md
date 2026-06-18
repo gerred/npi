@@ -13,6 +13,9 @@
 - Added inherited Mistral prompt caching using the pi session ID as `prompt_cache_key`, including cached-token usage and cost accounting ([#5854](https://github.com/earendil-works/pi/issues/5854)).
 - Added estimated post-compaction token counts to compact results and compaction events ([#5877](https://github.com/earendil-works/pi/issues/5877)).
 - Added the inherited OpenRouter Fusion alias as `openrouter/fusion` ([#5866](https://github.com/earendil-works/pi/pull/5866) by [@dannote](https://github.com/dannote)).
+- Added Noumena login with Kimi 2.7 Coder as the Noumena default model.
+- Added npi runtime naming, `.npi` config storage, and Kimi 2.7 Coder as the first default model for the Noumena harness.
+- Added native Noumena OpenAI-compatible WS v2 streaming to npi release artifacts where a host Rust build is available.
 
 ### Fixed
 

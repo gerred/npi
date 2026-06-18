@@ -136,6 +136,18 @@ const NVIDIA_OPENAI_COMPAT: OpenAICompletionsCompat = {
 	supportsStrictMode: false,
 	supportsLongCacheRetention: false,
 };
+const NOUMENA_BASE_URL = "https://api.noumena.com/v1";
+const NOUMENA_KIMI_2_7_CODER_MODEL = "/data/models/hf/moonshotai__Kimi-K2.7-Code";
+const NOUMENA_OAUTH_BETA_HEADER = "oauth-2025-04-20";
+const NOUMENA_KIMI_2_7_CODER_COMPAT: OpenAICompletionsCompat = {
+	supportsStore: false,
+	supportsDeveloperRole: false,
+	supportsReasoningEffort: true,
+	maxTokensField: "max_tokens",
+	thinkingFormat: "noumena",
+	supportsStrictMode: false,
+	supportsLongCacheRetention: false,
+};
 const NVIDIA_NIM_UNSUPPORTED_MODELS = new Set([
 	"abacusai/dracarys-llama-3.1-70b-instruct",
 	"bytedance/seed-oss-36b-instruct",
@@ -1850,6 +1862,36 @@ async function generateModels() {
 	];
 	allModels.push(...antLingModels);
 
+	const noumenaModels: Model<"openai-completions">[] = [
+		{
+			id: "kimi-2.7-coder",
+			name: "Kimi 2.7 Coder",
+			requestModel: NOUMENA_KIMI_2_7_CODER_MODEL,
+			api: "openai-completions",
+			baseUrl: NOUMENA_BASE_URL,
+			headers: {
+				"x-app": "cli",
+				"anthropic-beta": NOUMENA_OAUTH_BETA_HEADER,
+			},
+			provider: "noumena",
+			reasoning: true,
+			thinkingLevelMap: {
+				off: "none",
+				minimal: null,
+				low: "medium",
+				medium: "medium",
+				high: "high",
+				xhigh: null,
+			},
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 200000,
+			maxTokens: 256000,
+			compat: NOUMENA_KIMI_2_7_CODER_COMPAT,
+		},
+	];
+	allModels.push(...noumenaModels);
+
 	for (const candidate of allModels) {
 		if (candidate.api === "openai-completions" && candidate.id.includes("deepseek-v4")) {
 			const preservesNativeReasoningEffort = candidate.provider === "openrouter" || candidate.provider === "opencode";
@@ -2111,6 +2153,9 @@ export const MODELS = {
 			output += `\t\t"${model.id}": {\n`;
 			output += `\t\t\tid: "${model.id}",\n`;
 			output += `\t\t\tname: "${model.name}",\n`;
+			if (model.requestModel !== undefined) {
+				output += `\t\t\trequestModel: "${model.requestModel}",\n`;
+			}
 			output += `\t\t\tapi: "${model.api}",\n`;
 			output += `\t\t\tprovider: "${model.provider}",\n`;
 			if (model.baseUrl !== undefined) {

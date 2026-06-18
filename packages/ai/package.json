@@ -59,10 +59,11 @@
 		"README.md"
 	],
 	"scripts": {
-		"clean": "shx rm -rf dist",
+		"clean": "shx rm -rf dist native/openai-compat-ws-v2-napi/dist",
 		"generate-models": "node scripts/generate-models.ts",
 		"generate-image-models": "node scripts/generate-image-models.ts",
-		"build": "npm run generate-models && npm run generate-image-models && tsgo -p tsconfig.build.json",
+		"build": "npm run generate-models && npm run generate-image-models && tsgo -p tsconfig.build.json && npm run build:noumena-ws-v2-native",
+		"build:noumena-ws-v2-native": "node scripts/build-noumena-ws-v2-native.mjs",
 		"test": "vitest --run",
 		"prepublishOnly": "npm run clean && npm run build"
 	},

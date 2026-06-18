@@ -34,6 +34,7 @@ out.jsonl
 pi-*.html
 out.html
 packages/coding-agent/binaries/
+packages/ai/native/openai-compat-ws-v2-napi/target/
 todo.md
 plans/
 .pi/hf-sessions/
