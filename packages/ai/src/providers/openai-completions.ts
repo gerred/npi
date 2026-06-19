@@ -5,18 +5,14 @@ import type {
 	ChatCompletionContentPart,
 	ChatCompletionContentPartImage,
 	ChatCompletionContentPartText,
-	ChatCompletionDeveloperMessageParam,
 	ChatCompletionMessageParam,
-	ChatCompletionSystemMessageParam,
 	ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions.js";
 import { calculateCost, clampThinkingLevel } from "../models.ts";
 import type {
 	AssistantMessage,
-	CacheRetention,
 	Context,
 	ImageContent,
-	Message,
 	Model,
 	OpenAICompletionsCompat,
 	ProviderEnv,
@@ -35,31 +31,9 @@ import { headersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
-import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
-import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { createNoumenaOpenAICompatWsV2Fetch, shouldUseNoumenaOpenAICompatWsV2 } from "./noumena-ws-v2-native.ts";
-import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { buildBaseOptions } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
-
-/**
- * Check if conversation messages contain tool calls or tool results.
- * This is needed because Anthropic (via proxy) requires the tools param
- * to be present when messages include tool_calls or tool role messages.
- */
-function hasToolHistory(messages: Message[]): boolean {
-	for (const msg of messages) {
-		if (msg.role === "toolResult") {
-			return true;
-		}
-		if (msg.role === "assistant") {
-			if (msg.content.some((block) => block.type === "toolCall")) {
-				return true;
-			}
-		}
-	}
-	return false;
-}
 
 function isTextContentBlock(block: { type: string }): block is TextContent {
 	return block.type === "text";
@@ -82,34 +56,9 @@ export interface OpenAICompletionsOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
 }
 
-interface OpenAICompatCacheControl {
-	type: "ephemeral";
-	ttl?: string;
-}
-
 type ResolvedOpenAICompletionsCompat = Omit<Required<OpenAICompletionsCompat>, "cacheControlFormat"> & {
 	cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
 };
-
-type ChatCompletionInstructionMessageParam = ChatCompletionDeveloperMessageParam | ChatCompletionSystemMessageParam;
-
-type ChatCompletionTextPartWithCacheControl = ChatCompletionContentPartText & {
-	cache_control?: OpenAICompatCacheControl;
-};
-
-type ChatCompletionToolWithCacheControl = OpenAI.Chat.Completions.ChatCompletionTool & {
-	cache_control?: OpenAICompatCacheControl;
-};
-
-function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
-	if (cacheRetention) {
-		return cacheRetention;
-	}
-	if (getProviderEnvValue("PI_CACHE_RETENTION", env) === "long") {
-		return "long";
-	}
-	return "short";
-}
 
 export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenAICompletionsOptions> = (
 	model: Model<"openai-completions">,
@@ -143,10 +92,8 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 				throw new Error(`No API key for provider: ${model.provider}`);
 			}
 			const compat = getCompat(model);
-			const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
-			const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
-			const client = createClient(model, context, apiKey, options?.headers, cacheSessionId, compat, options);
-			let params = buildParams(model, context, options, compat, cacheRetention);
+			const client = createClient(model, apiKey, options?.headers, options);
+			let params = buildParams(model, context, options, compat);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
 				params = nextParams as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
@@ -314,10 +261,9 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 						});
 					}
 
-					// Some endpoints return reasoning in reasoning_content (llama.cpp),
-					// or reasoning (other openai compatible endpoints)
+					// Noumena may stream reasoning in one of these OpenAI-compatible
+					// delta fields depending on the backend path.
 					// Use the first non-empty reasoning field to avoid duplication
-					// (e.g., chutes.ai returns both reasoning_content and reasoning with same content)
 					const reasoningFields = ["reasoning_content", "reasoning", "reasoning_text"];
 					const deltaFields = choice.delta as Record<string, unknown>;
 					let foundReasoningField: string | null = null;
@@ -332,11 +278,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 					if (foundReasoningField) {
 						const delta = deltaFields[foundReasoningField];
 						if (typeof delta === "string" && delta.length > 0) {
-							const thinkingSignature =
-								model.provider === "opencode-go" && foundReasoningField === "reasoning"
-									? "reasoning_content"
-									: foundReasoningField;
-							const block = ensureThinkingBlock(thinkingSignature);
+							const block = ensureThinkingBlock(foundReasoningField);
 							block.thinking += delta;
 							stream.push({
 								type: "thinking_delta",
@@ -417,7 +359,6 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			}
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
 			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-			// Some providers via OpenRouter give additional information in this field.
 			const rawMetadata = (error as any)?.error?.metadata?.raw;
 			if (rawMetadata) output.errorMessage += `\n${rawMetadata}`;
 			stream.push({ type: "error", reason: output.stopReason, error: output });
@@ -452,43 +393,18 @@ export const streamSimpleOpenAICompletions: StreamFunction<"openai-completions",
 
 function createClient(
 	model: Model<"openai-completions">,
-	context: Context,
 	apiKey: string,
 	optionsHeaders?: Record<string, string>,
-	sessionId?: string,
-	compat: ResolvedOpenAICompletionsCompat = getCompat(model),
 	options?: OpenAICompletionsOptions,
 ) {
 	const headers = { ...model.headers };
-	if (model.provider === "github-copilot") {
-		const hasImages = hasCopilotVisionInput(context.messages);
-		const copilotHeaders = buildCopilotDynamicHeaders({
-			messages: context.messages,
-			hasImages,
-		});
-		Object.assign(headers, copilotHeaders);
-	}
-
-	if (sessionId && compat.sendSessionAffinityHeaders) {
-		headers.session_id = sessionId;
-		headers["x-client-request-id"] = sessionId;
-		headers["x-session-affinity"] = sessionId;
-	}
 
 	// Merge options headers last so they can override defaults
 	if (optionsHeaders) {
 		Object.assign(headers, optionsHeaders);
 	}
 
-	const defaultHeaders =
-		model.provider === "cloudflare-ai-gateway"
-			? {
-					...headers,
-					Authorization: headers.Authorization ?? null,
-					"cf-aig-authorization": `Bearer ${apiKey}`,
-				}
-			: headers;
-	const baseURL = isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model, options?.env) : model.baseUrl;
+	const baseURL = resolveOpenAICompletionsBaseUrl(model, options?.env);
 	const fetch =
 		typeof globalThis.fetch === "function" &&
 		shouldUseNoumenaOpenAICompatWsV2({
@@ -509,9 +425,23 @@ function createClient(
 		apiKey,
 		baseURL,
 		dangerouslyAllowBrowser: true,
-		defaultHeaders,
+		defaultHeaders: headers,
 		fetch,
 	});
+}
+
+function resolveOpenAICompletionsBaseUrl(model: Model<"openai-completions">, env?: ProviderEnv): string {
+	if (model.provider !== "noumena") {
+		return model.baseUrl;
+	}
+
+	const baseUrl = getProviderEnvValue("CODE_STREAM_BASE_URL", env) ?? getProviderEnvValue("NOUMENA_BASE_URL", env);
+	if (!baseUrl) {
+		return model.baseUrl;
+	}
+
+	const normalized = baseUrl.replace(/\/+$/, "");
+	return normalized.endsWith("/v1") ? normalized : `${normalized}/v1`;
 }
 
 function buildParams(
@@ -519,25 +449,21 @@ function buildParams(
 	context: Context,
 	options?: OpenAICompletionsOptions,
 	compat: ResolvedOpenAICompletionsCompat = getCompat(model),
-	cacheRetention: CacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env),
 ) {
 	const messages = convertMessages(model, context, compat);
-	const cacheControl = getCompatCacheControl(compat, cacheRetention);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.requestModel ?? model.id,
 		messages,
 		stream: true,
-		prompt_cache_key:
-			(model.baseUrl.includes("api.openai.com") && cacheRetention !== "none") ||
-			(cacheRetention === "long" && compat.supportsLongCacheRetention)
-				? clampOpenAIPromptCacheKey(options?.sessionId)
-				: undefined,
-		prompt_cache_retention: cacheRetention === "long" && compat.supportsLongCacheRetention ? "24h" : undefined,
 	};
 
 	if (compat.supportsUsageInStreaming !== false) {
-		(params as any).stream_options = { include_usage: true };
+		const streamOptions: { include_usage: boolean; continuous_usage_stats?: boolean } = { include_usage: true };
+		if (compat.thinkingFormat === "noumena") {
+			streamOptions.continuous_usage_stats = false;
+		}
+		(params as { stream_options?: typeof streamOptions }).stream_options = streamOptions;
 	}
 
 	if (compat.supportsStore) {
@@ -558,68 +484,13 @@ function buildParams(
 
 	if (context.tools && context.tools.length > 0) {
 		params.tools = convertTools(context.tools, compat);
-		if (compat.zaiToolStream) {
-			(params as any).tool_stream = true;
-		}
-	} else if (hasToolHistory(context.messages)) {
-		// Anthropic (via LiteLLM/proxy) requires tools param when conversation has tool_calls/tool_results
-		params.tools = [];
-	}
-
-	if (cacheControl) {
-		applyAnthropicCacheControl(messages, params.tools, cacheControl);
 	}
 
 	if (options?.toolChoice) {
 		params.tool_choice = options.toolChoice;
 	}
 
-	if (compat.thinkingFormat === "zai" && model.reasoning) {
-		const zaiParams = params as Omit<typeof params, "reasoning_effort"> & {
-			thinking?: { type: "enabled" | "disabled" };
-			reasoning_effort?: string;
-		};
-		zaiParams.thinking = { type: options?.reasoningEffort ? "enabled" : "disabled" };
-		if (options?.reasoningEffort && compat.supportsReasoningEffort) {
-			const mappedEffort = model.thinkingLevelMap?.[options.reasoningEffort];
-			const effort = mappedEffort === undefined ? options.reasoningEffort : mappedEffort;
-			if (typeof effort === "string") {
-				zaiParams.reasoning_effort = effort;
-			}
-		}
-	} else if (compat.thinkingFormat === "qwen" && model.reasoning) {
-		(params as any).enable_thinking = !!options?.reasoningEffort;
-	} else if (compat.thinkingFormat === "qwen-chat-template" && model.reasoning) {
-		(params as any).chat_template_kwargs = {
-			enable_thinking: !!options?.reasoningEffort,
-			preserve_thinking: true,
-		};
-	} else if (compat.thinkingFormat === "deepseek" && model.reasoning) {
-		if (options?.reasoningEffort) {
-			(params as any).thinking = { type: "enabled" };
-		} else if (model.thinkingLevelMap?.off !== null) {
-			(params as any).thinking = { type: "disabled" };
-		}
-		if (options?.reasoningEffort && compat.supportsReasoningEffort) {
-			(params as any).reasoning_effort =
-				model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;
-		}
-	} else if (compat.thinkingFormat === "openrouter" && model.reasoning) {
-		// OpenRouter normalizes reasoning across providers via a nested reasoning object.
-		const openRouterParams = params as typeof params & { reasoning?: { effort?: string } };
-		if (options?.reasoningEffort) {
-			openRouterParams.reasoning = {
-				effort: model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort,
-			};
-		} else if (model.thinkingLevelMap?.off !== null) {
-			openRouterParams.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
-		}
-	} else if (compat.thinkingFormat === "ant-ling" && model.reasoning && options?.reasoningEffort) {
-		const effort = model.thinkingLevelMap?.[options.reasoningEffort];
-		if (typeof effort === "string") {
-			(params as typeof params & { reasoning?: { effort: string } }).reasoning = { effort };
-		}
-	} else if (compat.thinkingFormat === "noumena" && model.reasoning) {
+	if (compat.thinkingFormat === "noumena" && model.reasoning) {
 		const noumenaParams = params as Omit<typeof params, "reasoning_effort"> & {
 			separate_reasoning?: boolean;
 			stream_reasoning?: boolean;
@@ -638,164 +509,9 @@ function buildParams(
 			noumenaParams.reasoning_effort = "none";
 			noumenaParams.chat_template_kwargs = { thinking: false, enable_thinking: false };
 		}
-	} else if (compat.thinkingFormat === "together" && model.reasoning) {
-		const togetherParams = params as Omit<typeof params, "reasoning_effort"> & {
-			reasoning?: { enabled: boolean };
-			reasoning_effort?: string;
-		};
-		togetherParams.reasoning = { enabled: !!options?.reasoningEffort };
-		if (options?.reasoningEffort && compat.supportsReasoningEffort) {
-			togetherParams.reasoning_effort = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;
-		}
-	} else if (compat.thinkingFormat === "string-thinking" && model.reasoning) {
-		const stringThinkingParams = params as typeof params & { thinking?: string };
-		if (options?.reasoningEffort) {
-			stringThinkingParams.thinking = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;
-		} else if (model.thinkingLevelMap?.off !== null) {
-			stringThinkingParams.thinking = model.thinkingLevelMap?.off ?? "none";
-		}
-	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
-		// OpenAI-style reasoning_effort
-		(params as any).reasoning_effort = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;
-	} else if (!options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {
-		const offValue = model.thinkingLevelMap?.off;
-		if (typeof offValue === "string") {
-			(params as any).reasoning_effort = offValue;
-		}
-	}
-
-	// OpenRouter provider routing preferences
-	if (model.compat?.openRouterRouting) {
-		(params as any).provider = model.compat.openRouterRouting;
-	}
-
-	// Vercel AI Gateway provider routing preferences
-	if (model.baseUrl.includes("ai-gateway.vercel.sh") && model.compat?.vercelGatewayRouting) {
-		const routing = model.compat.vercelGatewayRouting;
-		if (routing.only || routing.order) {
-			const gatewayOptions: Record<string, string[]> = {};
-			if (routing.only) gatewayOptions.only = routing.only;
-			if (routing.order) gatewayOptions.order = routing.order;
-			(params as any).providerOptions = { gateway: gatewayOptions };
-		}
 	}
 
 	return params;
-}
-
-function getCompatCacheControl(
-	compat: ResolvedOpenAICompletionsCompat,
-	cacheRetention: CacheRetention,
-): OpenAICompatCacheControl | undefined {
-	if (compat.cacheControlFormat !== "anthropic" || cacheRetention === "none") {
-		return undefined;
-	}
-
-	const ttl = cacheRetention === "long" && compat.supportsLongCacheRetention ? "1h" : undefined;
-	return { type: "ephemeral", ...(ttl ? { ttl } : {}) };
-}
-
-function applyAnthropicCacheControl(
-	messages: ChatCompletionMessageParam[],
-	tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined,
-	cacheControl: OpenAICompatCacheControl,
-): void {
-	addCacheControlToSystemPrompt(messages, cacheControl);
-	addCacheControlToLastTool(tools, cacheControl);
-	addCacheControlToLastConversationMessage(messages, cacheControl);
-}
-
-function addCacheControlToSystemPrompt(
-	messages: ChatCompletionMessageParam[],
-	cacheControl: OpenAICompatCacheControl,
-): void {
-	for (const message of messages) {
-		if (message.role === "system" || message.role === "developer") {
-			addCacheControlToInstructionMessage(message, cacheControl);
-			return;
-		}
-	}
-}
-
-function addCacheControlToLastConversationMessage(
-	messages: ChatCompletionMessageParam[],
-	cacheControl: OpenAICompatCacheControl,
-): void {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const message = messages[i];
-		if (message.role === "user" || message.role === "assistant") {
-			if (addCacheControlToMessage(message, cacheControl)) {
-				return;
-			}
-		}
-	}
-}
-
-function addCacheControlToLastTool(
-	tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined,
-	cacheControl: OpenAICompatCacheControl,
-): void {
-	if (!tools || tools.length === 0) {
-		return;
-	}
-
-	const lastTool = tools[tools.length - 1] as ChatCompletionToolWithCacheControl;
-	lastTool.cache_control = cacheControl;
-}
-
-function addCacheControlToInstructionMessage(
-	message: ChatCompletionInstructionMessageParam,
-	cacheControl: OpenAICompatCacheControl,
-): boolean {
-	return addCacheControlToTextContent(message, cacheControl);
-}
-
-function addCacheControlToMessage(
-	message: ChatCompletionMessageParam,
-	cacheControl: OpenAICompatCacheControl,
-): boolean {
-	if (message.role === "user" || message.role === "assistant") {
-		return addCacheControlToTextContent(message, cacheControl);
-	}
-	return false;
-}
-
-function addCacheControlToTextContent(
-	message:
-		| ChatCompletionInstructionMessageParam
-		| ChatCompletionAssistantMessageParam
-		| Extract<ChatCompletionMessageParam, { role: "user" }>,
-	cacheControl: OpenAICompatCacheControl,
-): boolean {
-	const content = message.content;
-	if (typeof content === "string") {
-		if (content.length === 0) {
-			return false;
-		}
-		message.content = [
-			{
-				type: "text",
-				text: content,
-				cache_control: cacheControl,
-			},
-		] as ChatCompletionTextPartWithCacheControl[];
-		return true;
-	}
-
-	if (!Array.isArray(content)) {
-		return false;
-	}
-
-	for (let i = content.length - 1; i >= 0; i--) {
-		const part = content[i];
-		if (part?.type === "text") {
-			const textPart = part as ChatCompletionTextPartWithCacheControl;
-			textPart.cache_control = cacheControl;
-			return true;
-		}
-	}
-
-	return false;
 }
 
 export function convertMessages(
@@ -806,17 +522,12 @@ export function convertMessages(
 	const params: ChatCompletionMessageParam[] = [];
 
 	const normalizeToolCallId = (id: string): string => {
-		// Handle pipe-separated IDs from OpenAI Responses API
-		// Format: {call_id}|{id} where {id} can be 400+ chars with special chars (+, /, =)
-		// These come from providers like github-copilot, openai-codex, opencode
-		// Extract just the call_id part and normalize it
+		// Handle pipe-separated IDs from imported sessions that used Responses-style ids.
 		if (id.includes("|")) {
 			const [callId] = id.split("|");
-			// Sanitize to allowed chars and truncate to 40 chars (OpenAI limit)
 			return callId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
 		}
 
-		if (model.provider === "openai") return id.length > 40 ? id.slice(0, 40) : id;
 		return id;
 	};
 
@@ -908,11 +619,7 @@ export function convertMessages(
 						assistantMsg.content = assistantText;
 					}
 
-					// Use the signature from the first thinking block if available (for llama.cpp server + gpt-oss)
-					let signature = nonEmptyThinkingBlocks[0].thinkingSignature;
-					if (model.provider === "opencode-go" && signature === "reasoning") {
-						signature = "reasoning_content";
-					}
+					const signature = nonEmptyThinkingBlocks[0].thinkingSignature;
 					if (signature && signature.length > 0) {
 						(assistantMsg as any)[signature] = nonEmptyThinkingBlocks.map((block) => block.thinking).join("\n");
 					}
@@ -1073,16 +780,9 @@ function parseChunkUsage(
 	const cacheReadTokens = rawUsage.prompt_tokens_details?.cached_tokens ?? rawUsage.prompt_cache_hit_tokens ?? 0;
 	const cacheWriteTokens = rawUsage.prompt_tokens_details?.cache_write_tokens || 0;
 
-	// Follow documented OpenAI/OpenRouter semantics: cached_tokens is cache-read
-	// tokens (hits). OpenAI does not document or emit cache_write_tokens, but
-	// OpenRouter-compatible providers can include it as a separate write count.
-	// OpenRouter's own provider/tests affirm the separate mapping:
-	// https://github.com/OpenRouterTeam/ai-sdk-provider/pull/409
-	// Do not subtract writes from cached_tokens, otherwise spec-compliant
-	// providers are under-reported. DS4 mirrors this contract too:
-	// https://github.com/antirez/ds4/pull/29
+	// OpenAI-compatible usage reports cached_tokens as cache-read tokens. Some
+	// endpoints may also include cache_write_tokens as a separate write count.
 	const input = Math.max(0, promptTokens - cacheReadTokens - cacheWriteTokens);
-	// OpenAI completion_tokens already includes reasoning_tokens.
 	const outputTokens = rawUsage.completion_tokens || 0;
 	const usage: AssistantMessage["usage"] = {
 		input,
@@ -1122,108 +822,22 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"] | str
 	}
 }
 
-/**
- * Detect compatibility settings from provider and baseUrl for known providers.
- * Provider takes precedence over URL-based detection since it's explicitly configured.
- * Returns a fully resolved OpenAICompletionsCompat object with all fields set.
- */
 function detectCompat(model: Model<"openai-completions">): ResolvedOpenAICompletionsCompat {
-	const provider = model.provider;
-	const baseUrl = model.baseUrl;
-
-	const isZai =
-		provider === "zai" ||
-		provider === "zai-coding-cn" ||
-		baseUrl.includes("api.z.ai") ||
-		baseUrl.includes("open.bigmodel.cn");
-	const isTogether =
-		provider === "together" || baseUrl.includes("api.together.ai") || baseUrl.includes("api.together.xyz");
-	const isMoonshot = provider === "moonshotai" || provider === "moonshotai-cn" || baseUrl.includes("api.moonshot.");
-	const isOpenRouter = provider === "openrouter" || baseUrl.includes("openrouter.ai");
-	const isCloudflareWorkersAI = provider === "cloudflare-workers-ai" || baseUrl.includes("api.cloudflare.com");
-	const isCloudflareAiGateway = provider === "cloudflare-ai-gateway" || baseUrl.includes("gateway.ai.cloudflare.com");
-	const isNvidia = provider === "nvidia" || baseUrl.includes("integrate.api.nvidia.com");
-	const isAntLing = provider === "ant-ling" || baseUrl.includes("api.ant-ling.com");
-	const isNoumena = provider === "noumena" || baseUrl.includes("api.noumena.com");
-
-	const isNonStandard =
-		isNoumena ||
-		isNvidia ||
-		provider === "cerebras" ||
-		baseUrl.includes("cerebras.ai") ||
-		provider === "xai" ||
-		baseUrl.includes("api.x.ai") ||
-		isTogether ||
-		baseUrl.includes("chutes.ai") ||
-		baseUrl.includes("deepseek.com") ||
-		isZai ||
-		isMoonshot ||
-		provider === "opencode" ||
-		baseUrl.includes("opencode.ai") ||
-		isCloudflareWorkersAI ||
-		isCloudflareAiGateway ||
-		isAntLing;
-
-	const useMaxTokens =
-		baseUrl.includes("chutes.ai") ||
-		isMoonshot ||
-		isCloudflareAiGateway ||
-		isTogether ||
-		isNvidia ||
-		isAntLing ||
-		isNoumena;
-
-	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
-	const isDeepSeek = provider === "deepseek" || baseUrl.includes("deepseek.com");
-	const isOpenRouterDeveloperRoleModel =
-		isOpenRouter && (model.id.startsWith("anthropic/") || model.id.startsWith("openai/"));
-	const cacheControlFormat = provider === "openrouter" && model.id.startsWith("anthropic/") ? "anthropic" : undefined;
-
 	return {
-		supportsStore: !isNonStandard,
-		supportsDeveloperRole: isOpenRouterDeveloperRoleModel || (!isNonStandard && !isOpenRouter),
-		supportsReasoningEffort:
-			!isGrok &&
-			!isZai &&
-			!isMoonshot &&
-			!isTogether &&
-			!isCloudflareAiGateway &&
-			!isNvidia &&
-			!isAntLing &&
-			!isNoumena,
+		supportsStore: false,
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: model.compat?.supportsReasoningEffort ?? false,
 		supportsUsageInStreaming: true,
-		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
+		maxTokensField: "max_tokens",
 		requiresToolResultName: false,
 		requiresAssistantAfterToolResult: false,
 		requiresThinkingAsText: false,
-		requiresReasoningContentOnAssistantMessages: isDeepSeek,
-		thinkingFormat: isDeepSeek
-			? "deepseek"
-			: isZai
-				? "zai"
-				: isTogether
-					? "together"
-					: isNoumena
-						? "noumena"
-						: isAntLing
-							? "ant-ling"
-							: isOpenRouter
-								? "openrouter"
-								: "openai",
-		openRouterRouting: {},
-		vercelGatewayRouting: {},
-		zaiToolStream: false,
-		supportsStrictMode: !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia && !isNoumena,
-		cacheControlFormat,
+		requiresReasoningContentOnAssistantMessages: false,
+		thinkingFormat: "noumena",
+		supportsStrictMode: false,
+		cacheControlFormat: undefined,
 		sendSessionAffinityHeaders: false,
-		supportsLongCacheRetention: !(
-			isTogether ||
-			isCloudflareWorkersAI ||
-			isCloudflareAiGateway ||
-			isNvidia ||
-			isAntLing ||
-			isNoumena
-		),
+		supportsLongCacheRetention: false,
 	};
 }
 
@@ -1249,9 +863,6 @@ function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletion
 			model.compat.requiresReasoningContentOnAssistantMessages ??
 			detected.requiresReasoningContentOnAssistantMessages,
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
-		openRouterRouting: model.compat.openRouterRouting ?? {},
-		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
-		zaiToolStream: model.compat.zaiToolStream ?? detected.zaiToolStream,
 		supportsStrictMode: model.compat.supportsStrictMode ?? detected.supportsStrictMode,
 		cacheControlFormat: model.compat.cacheControlFormat ?? detected.cacheControlFormat,
 		sendSessionAffinityHeaders: model.compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,

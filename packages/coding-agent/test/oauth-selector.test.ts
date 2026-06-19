@@ -1,4 +1,4 @@
-import { setKeybindings } from "@earendil-works/pi-tui";
+import { setKeybindings } from "@gerred/npi-tui";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { KeybindingsManager } from "../src/core/keybindings.ts";
@@ -8,7 +8,7 @@ import { isApiKeyLoginProvider } from "../src/modes/interactive/interactive-mode
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
-const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+const originalNoumenaApiKey = process.env.NOUMENA_API_KEY;
 
 describe("OAuthSelectorComponent", () => {
 	beforeAll(() => {
@@ -20,29 +20,30 @@ describe("OAuthSelectorComponent", () => {
 	});
 
 	afterEach(() => {
-		if (originalOpenAiApiKey === undefined) {
-			delete process.env.OPENAI_API_KEY;
+		if (originalNoumenaApiKey === undefined) {
+			delete process.env.NOUMENA_API_KEY;
 		} else {
-			process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+			process.env.NOUMENA_API_KEY = originalNoumenaApiKey;
 		}
 	});
 
-	it("keeps built-in API key providers separate from OAuth-only providers", () => {
-		const oauthProviderIds = new Set(["anthropic", "github-copilot", "custom-oauth"]);
-		const builtInProviderIds = new Set(["anthropic", "github-copilot", "amazon-bedrock", "openai"]);
+	it("only exposes Noumena as a built-in API key provider", () => {
+		const oauthProviderIds = new Set(["noumena", "custom-oauth"]);
+		const builtInProviderIds = new Set(["noumena"]);
 
-		expect(isApiKeyLoginProvider("anthropic", oauthProviderIds, builtInProviderIds)).toBe(true);
-		expect(BUILT_IN_PROVIDER_DISPLAY_NAMES.anthropic).toBe("Anthropic");
-		expect(isApiKeyLoginProvider("openai", oauthProviderIds, builtInProviderIds)).toBe(true);
+		expect(BUILT_IN_PROVIDER_DISPLAY_NAMES.noumena).toBe("Noumena");
+		expect(isApiKeyLoginProvider("noumena", oauthProviderIds, builtInProviderIds)).toBe(true);
+		expect(isApiKeyLoginProvider("anthropic", oauthProviderIds, builtInProviderIds)).toBe(false);
+		expect(isApiKeyLoginProvider("openai", oauthProviderIds, builtInProviderIds)).toBe(false);
 		expect(isApiKeyLoginProvider("github-copilot", oauthProviderIds, builtInProviderIds)).toBe(false);
-		expect(isApiKeyLoginProvider("amazon-bedrock", oauthProviderIds, builtInProviderIds)).toBe(true);
+		expect(isApiKeyLoginProvider("amazon-bedrock", oauthProviderIds, builtInProviderIds)).toBe(false);
 		expect(isApiKeyLoginProvider("custom-oauth", oauthProviderIds, builtInProviderIds)).toBe(false);
-		expect(isApiKeyLoginProvider("custom-api", oauthProviderIds, builtInProviderIds)).toBe(true);
+		expect(isApiKeyLoginProvider("custom-api", oauthProviderIds, builtInProviderIds)).toBe(false);
 	});
 
 	it("shows stored OAuth auth distinctly in the API key selector", () => {
 		const authStorage = AuthStorage.inMemory({
-			anthropic: {
+			noumena: {
 				type: "oauth",
 				access: "access-token",
 				refresh: "refresh-token",
@@ -52,32 +53,32 @@ describe("OAuthSelectorComponent", () => {
 		const selector = new OAuthSelectorComponent(
 			"login",
 			authStorage,
-			[{ id: "anthropic", name: "Anthropic", authType: "api_key" }],
+			[{ id: "noumena", name: "Noumena", authType: "api_key" }],
 			() => {},
 			() => {},
 		);
 
 		const output = stripAnsi(selector.render(120).join("\n"));
 
-		expect(output).toContain("Anthropic");
+		expect(output).toContain("Noumena");
 		expect(output).toContain("subscription configured");
 	});
 
 	it("shows environment API key auth as configured", () => {
-		process.env.OPENAI_API_KEY = "test-openai-key";
+		process.env.NOUMENA_API_KEY = "test-noumena-key";
 		const authStorage = AuthStorage.inMemory();
 		const selector = new OAuthSelectorComponent(
 			"login",
 			authStorage,
-			[{ id: "openai", name: "OpenAI", authType: "api_key" }],
+			[{ id: "noumena", name: "Noumena", authType: "api_key" }],
 			() => {},
 			() => {},
 		);
 
 		const output = stripAnsi(selector.render(120).join("\n"));
 
-		expect(output).toContain("OpenAI");
-		expect(output).toContain("✓ env: OPENAI_API_KEY");
+		expect(output).toContain("Noumena");
+		expect(output).toContain("✓ env: NOUMENA_API_KEY");
 		expect(output).not.toContain("unconfigured");
 	});
 

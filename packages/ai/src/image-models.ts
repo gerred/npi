@@ -1,42 +1,27 @@
 import { IMAGE_MODELS } from "./image-models.generated.ts";
-import type { ImagesApi, ImagesModel, KnownImagesProvider } from "./types.ts";
+import type { ImagesApi, ImagesModel, ImagesProvider, KnownImagesProvider } from "./types.ts";
 
 const imageModelRegistry: Map<string, Map<string, ImagesModel<ImagesApi>>> = new Map();
+const generatedImageModels = IMAGE_MODELS as Record<string, Record<string, ImagesModel<ImagesApi>>>;
 
-for (const [provider, models] of Object.entries(IMAGE_MODELS)) {
+for (const [provider, models] of Object.entries(generatedImageModels)) {
 	const providerModels = new Map<string, ImagesModel<ImagesApi>>();
 	for (const [id, model] of Object.entries(models)) {
-		providerModels.set(id, model as ImagesModel<ImagesApi>);
+		providerModels.set(id, model);
 	}
 	imageModelRegistry.set(provider, providerModels);
 }
 
-type ImageModelApi<
-	TProvider extends KnownImagesProvider,
-	TModelId extends keyof (typeof IMAGE_MODELS)[TProvider],
-> = (typeof IMAGE_MODELS)[TProvider][TModelId] extends { api: infer TApi }
-	? TApi extends ImagesApi
-		? TApi
-		: never
-	: never;
-
-export function getImageModel<
-	TProvider extends KnownImagesProvider,
-	TModelId extends keyof (typeof IMAGE_MODELS)[TProvider],
->(provider: TProvider, modelId: TModelId): ImagesModel<ImageModelApi<TProvider, TModelId>> {
+export function getImageModel(provider: ImagesProvider, modelId: string): ImagesModel<ImagesApi> {
 	const providerModels = imageModelRegistry.get(provider);
-	return providerModels?.get(modelId as string) as ImagesModel<ImageModelApi<TProvider, TModelId>>;
+	return providerModels?.get(modelId) as ImagesModel<ImagesApi>;
 }
 
 export function getImageProviders(): KnownImagesProvider[] {
 	return Array.from(imageModelRegistry.keys()) as KnownImagesProvider[];
 }
 
-export function getImageModels<TProvider extends KnownImagesProvider>(
-	provider: TProvider,
-): ImagesModel<ImageModelApi<TProvider, keyof (typeof IMAGE_MODELS)[TProvider]>>[] {
+export function getImageModels(provider: ImagesProvider): ImagesModel<ImagesApi>[] {
 	const models = imageModelRegistry.get(provider);
-	return models
-		? (Array.from(models.values()) as ImagesModel<ImageModelApi<TProvider, keyof (typeof IMAGE_MODELS)[TProvider]>>[])
-		: [];
+	return models ? Array.from(models.values()) : [];
 }

@@ -1,99 +1,115 @@
 <p align="center">
-  <a href="https://pi.dev">
-    <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
-  </a>
-</p>
-<p align="center">
-  <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://code.noumena.com/logos/wordmark-light.svg">
+    <source media="(prefers-color-scheme: light)" srcset="https://code.noumena.com/logos/wordmark-dark.svg">
+    <img src="https://code.noumena.com/logos/wordmark-dark.svg" alt="Noumena" width="260">
+  </picture>
 </p>
 
-> New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](CONTRIBUTING.md).
+# npi
 
-# Pi Agent Harness
+npi is a Noumena-specific fork of the Pi coding-agent harness. The built-in
+runtime supports one provider and one model:
 
-This is the home of the Pi agent harness project including our self extensible coding agent.
+- Provider: `noumena`
+- Model: `kimi-2.7-coder`
+- Default API: `https://api.noumena.com/v1`
 
-* **[@earendil-works/pi-coding-agent](packages/coding-agent)**: Interactive coding agent CLI
-* **[@earendil-works/pi-agent-core](packages/agent)**: Agent runtime with tool calling and state management
-* **[@earendil-works/pi-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
+The CLI binary is `npi`, and the default config directory is `~/.npi/agent`.
 
-To learn more about Pi:
+## Status
 
-* [Visit pi.dev](https://pi.dev), the project website with demos
-* [Read the documentation](https://pi.dev/docs/latest), but you can also ask the agent to explain itself
+npi is an unofficial community fork. It is not an official Noumena harness and
+is not maintained by Noumena. For the official Noumena Code project, see
+[Noumena-Network/code](https://github.com/Noumena-Network/code).
 
-## All Packages
+## Packages
 
 | Package | Description |
 |---------|-------------|
-| **[@earendil-works/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
-| **[@earendil-works/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@earendil-works/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
-| **[@earendil-works/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
+| `@gerred/npi-coding-agent` | Interactive coding-agent CLI |
+| `@gerred/npi-ai` | Noumena-focused LLM API layer |
+| `@gerred/npi-agent-core` | Agent runtime with tool calling and state management |
+| `@gerred/npi-tui` | Terminal UI library |
 
-For Slack/chat automation and workflows see [earendil-works/pi-chat](https://github.com/earendil-works/pi-chat).
+## Install
 
-## Permissions & Containerization
+```bash
+npm install -g --ignore-scripts @gerred/npi-coding-agent
+npi
+```
 
-Pi does not include a built-in permission system for restricting filesystem, process, network, or credential access. By default, it runs with the permissions of the user and process that launched it.
+Authenticate with Noumena OAuth from the TUI:
 
-If you need stronger boundaries, containerize or sandbox Pi. See [packages/coding-agent/docs/containerization.md](packages/coding-agent/docs/containerization.md) for three patterns:
+```text
+/login
+```
 
-- **Gondolin extension**: keep `pi` and provider auth on the host while routing built-in tools and `!` commands into a local Linux micro-VM.
-- **Plain Docker**: run the whole `pi` process in a local container for simple isolation.
-- **OpenShell**: run the whole `pi` process in a policy-controlled sandbox.
+Or provide an API key:
 
-## Contributing
+```bash
+export NOUMENA_API_KEY=...
+npi
+```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.md](AGENTS.md) for project-specific rules (for both humans and agents).  Longer term plans for Pi can also be found in [RFCs](https://rfc.earendil.com/keyword/pi/).
+For ncode-compatible local key files:
+
+```bash
+export NOUMENA_API_KEY_FILE=~/.config/noumena/ncode/api_key
+npi
+```
+
+## Build From Source
+
+```bash
+npm install --ignore-scripts
+npm run check
+npm --prefix packages/coding-agent run build:binary
+./packages/coding-agent/dist/npi --help
+```
+
+The Bun binary artifact is written to `packages/coding-agent/dist/npi`.
+
+To build isolated local release artifacts:
+
+```bash
+npm run release:local -- --out /tmp/npi-local-release --force
+/tmp/npi-local-release/node/npi --help
+/tmp/npi-local-release/bun/npi --help
+```
 
 ## Development
 
 ```bash
-npm install --ignore-scripts  # Install all dependencies without running lifecycle scripts
-npm run build        # Build all packages
-npm run check        # Lint, format, and type check
-./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-./pi-test.sh         # Run pi from sources (can be run from any directory)
+npm install --ignore-scripts
+npm run check
+./test.sh
 ```
 
-## Supply-chain hardening
+Do not run lifecycle scripts during dependency hydration unless the dependency
+change has been reviewed.
 
-We treat npm dependency changes as reviewed code changes.
+## Environment
 
-- Direct external dependencies are pinned to exact versions. Internal workspace packages remain version-ranged.
-- `.npmrc` sets `save-exact=true` and `min-release-age=2` to avoid same-day dependency releases during npm resolution.
-- `package-lock.json` is the dependency ground truth. Pre-commit blocks accidental lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1` is set.
-- `npm run check` verifies pinned direct deps, native TypeScript import compatibility, and the generated coding-agent shrinkwrap.
-- The published CLI package includes `packages/coding-agent/npm-shrinkwrap.json`, generated from the root lockfile, to pin transitive deps for npm users.
-- Release smoke tests use `npm run release:local` to build, pack, and create isolated npm and Bun installs outside the repo before tagging a release.
-- Local release installs, documented npm installs, and `pi update --self` use `--ignore-scripts` where supported.
-- CI installs with `npm ci --ignore-scripts`, and a scheduled GitHub workflow runs `npm audit --omit=dev` plus `npm audit signatures --omit=dev`.
-- Shrinkwrap generation has an explicit allowlist for dependency lifecycle scripts; new lifecycle-script deps fail checks until reviewed.
+| Variable | Description |
+|----------|-------------|
+| `NOUMENA_API_KEY` | Noumena API key |
+| `NOUMENA_API_KEY_FILE` | File containing a Noumena API key |
+| `NOUMENA_BASE_URL` | Override the Noumena OpenAI-compatible base URL |
+| `CODE_STREAM_BASE_URL` | Legacy ncode-compatible base URL override |
+| `NOUMENA_ISSUER_BASE_URL` | Override Noumena OAuth issuer |
+| `NOUMENA_OAUTH_WEB_BASE_URL` | Override Noumena OAuth web flow URL |
+| `NOUMENA_OAUTH_CLIENT_ID` | Override Noumena OAuth client ID |
+| `NPI_CODING_AGENT_DIR` | Override `~/.npi/agent` |
+| `NPI_CODING_AGENT_SESSION_DIR` | Override session storage |
 
-## Share your OSS coding agent sessions
+## Attribution
 
-If you use Pi or other coding agents for open source work, please share your sessions.
-
-Public OSS session data helps improve coding agents with real-world tasks, tool use, failures, and fixes instead of toy benchmarks.
-
-For the full explanation, see [this post on X](https://x.com/badlogicgames/status/2037811643774652911).
-
-To publish sessions, use [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). Read its README.md for setup instructions. All you need is a Hugging Face account, the Hugging Face CLI, and `pi-share-hf`.
-
-You can also watch [this video](https://x.com/badlogicgames/status/2041151967695634619), where I show how I publish my `pi-mono` sessions.
-
-I regularly publish my own `pi-mono` work sessions here:
-
-- [badlogicgames/pi-mono on Hugging Face](https://huggingface.co/datasets/badlogicgames/pi-mono)
+npi is based on the MIT-licensed Pi mono repository by Mario Zechner and
+earendil-works. The original Pi attribution and license are retained; this fork
+keeps the original harness architecture while narrowing the supported provider
+surface to Noumena.
 
 ## License
 
 MIT
-
-<p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="packages/coding-agent/docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-</p>

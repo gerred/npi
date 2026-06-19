@@ -1,7 +1,7 @@
 {
-	"name": "@earendil-works/pi-tui",
-	"version": "0.79.7",
-	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
+	"name": "@gerred/npi-tui",
+	"version": "0.1.0",
+	"description": "Terminal UI library for npi",
 	"type": "module",
 	"main": "dist/index.js",
 	"scripts": {
@@ -29,7 +29,7 @@
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi.git",
+		"url": "git+https://github.com/gerred/npi.git",
 		"directory": "packages/tui"
 	},
 	"engines": {

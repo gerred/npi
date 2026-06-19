@@ -40,7 +40,7 @@ type NodeHttpModule = {
 const DEFAULT_ISSUER_BASE_URL = "https://api.noumena.com";
 const DEFAULT_OAUTH_WEB_BASE_URL = "https://code.noumena.com";
 const DEFAULT_CLIENT_ID = "noumena-code";
-const CALLBACK_HOST = getProviderEnvValue("PI_OAUTH_CALLBACK_HOST") || "127.0.0.1";
+const CALLBACK_HOST = getProviderEnvValue("NPI_OAUTH_CALLBACK_HOST") || "127.0.0.1";
 const CALLBACK_PATH = "/callback";
 const OAUTH_SCOPES = [
 	"org:create_api_key",

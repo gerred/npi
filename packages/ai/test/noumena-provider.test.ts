@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.ts";
 import { streamOpenAICompletions } from "../src/providers/openai-completions.ts";
-import type { Context } from "../src/types.ts";
+import type { Context, Model } from "../src/types.ts";
 import { getOAuthProvider } from "../src/utils/oauth/index.ts";
 
 const mockState = vi.hoisted(() => ({
@@ -58,6 +58,7 @@ interface OpenAIClientOptions {
 interface NoumenaPayload {
 	model?: string;
 	max_tokens?: number;
+	stream_options?: { include_usage?: boolean; continuous_usage_stats?: boolean };
 	separate_reasoning?: boolean;
 	stream_reasoning?: boolean;
 	reasoning_effort?: string;
@@ -70,6 +71,10 @@ const context: Context = {
 	tools: [],
 };
 
+function getNoumenaModel(): Model<"openai-completions"> {
+	return getModel("noumena", "kimi-2.7-coder") as Model<"openai-completions">;
+}
+
 describe("Noumena provider", () => {
 	beforeEach(() => {
 		mockState.clientOptions = [];
@@ -81,7 +86,7 @@ describe("Noumena provider", () => {
 	});
 
 	it("sends Kimi 2.7 Coder through Noumena's OpenAI-compatible route", async () => {
-		const model = getModel("noumena", "kimi-2.7-coder");
+		const model = getNoumenaModel();
 		expect(model.provider).toBe("noumena");
 		expect(model.requestModel).toBe("/data/models/hf/moonshotai__Kimi-K2.7-Code");
 
@@ -105,6 +110,7 @@ describe("Noumena provider", () => {
 		const payload = mockState.params[0] as NoumenaPayload;
 		expect(payload.model).toBe("/data/models/hf/moonshotai__Kimi-K2.7-Code");
 		expect(payload.max_tokens).toBe(123);
+		expect(payload.stream_options).toEqual({ include_usage: true, continuous_usage_stats: false });
 		expect(payload.separate_reasoning).toBe(true);
 		expect(payload.stream_reasoning).toBe(true);
 		expect(payload.reasoning_effort).toBe("high");
@@ -112,7 +118,7 @@ describe("Noumena provider", () => {
 	});
 
 	it("does not install the Noumena WS v2 fetch hook when SSE is requested", async () => {
-		const model = getModel("noumena", "kimi-2.7-coder");
+		const model = getNoumenaModel();
 
 		const stream = streamOpenAICompletions(model, context, {
 			apiKey: "oauth-token",
@@ -124,5 +130,40 @@ describe("Noumena provider", () => {
 
 		const clientOptions = mockState.clientOptions[0] as OpenAIClientOptions;
 		expect(clientOptions.fetch).toBeUndefined();
+	});
+
+	it("uses Noumena base URL overrides from request env", async () => {
+		const model = getNoumenaModel();
+
+		const stream = streamOpenAICompletions(model, context, {
+			apiKey: "oauth-token",
+			env: {
+				NOUMENA_BASE_URL: "https://api.override.test",
+			},
+		});
+		for await (const _event of stream) {
+			void _event;
+		}
+
+		const clientOptions = mockState.clientOptions[0] as OpenAIClientOptions;
+		expect(clientOptions.baseURL).toBe("https://api.override.test/v1");
+	});
+
+	it("prefers CODE_STREAM_BASE_URL over NOUMENA_BASE_URL", async () => {
+		const model = getNoumenaModel();
+
+		const stream = streamOpenAICompletions(model, context, {
+			apiKey: "oauth-token",
+			env: {
+				NOUMENA_BASE_URL: "https://api.override.test",
+				CODE_STREAM_BASE_URL: "https://stream.override.test/v1",
+			},
+		});
+		for await (const _event of stream) {
+			void _event;
+		}
+
+		const clientOptions = mockState.clientOptions[0] as OpenAIClientOptions;
+		expect(clientOptions.baseURL).toBe("https://stream.override.test/v1");
 	});
 });

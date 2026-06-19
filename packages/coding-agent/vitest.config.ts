@@ -19,6 +19,10 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: [
+			{ find: /^@gerred\/npi-ai$/, replacement: aiSrcIndex },
+			{ find: /^@gerred\/npi-ai\/oauth$/, replacement: aiSrcOAuth },
+			{ find: /^@gerred\/npi-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@gerred\/npi-tui$/, replacement: tuiSrcIndex },
 			{ find: /^@earendil-works\/pi-ai$/, replacement: aiSrcIndex },
 			{ find: /^@earendil-works\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@earendil-works\/pi-agent-core$/, replacement: agentSrcIndex },

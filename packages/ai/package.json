@@ -1,7 +1,7 @@
 {
-	"name": "@earendil-works/pi-ai",
-	"version": "0.79.7",
-	"description": "Unified LLM API with automatic model discovery and provider configuration",
+	"name": "@gerred/npi-ai",
+	"version": "0.1.0",
+	"description": "Noumena-focused LLM API for npi",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -10,49 +10,17 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./anthropic": {
-			"types": "./dist/providers/anthropic.d.ts",
-			"import": "./dist/providers/anthropic.js"
-		},
-		"./azure-openai-responses": {
-			"types": "./dist/providers/azure-openai-responses.d.ts",
-			"import": "./dist/providers/azure-openai-responses.js"
-		},
-		"./google": {
-			"types": "./dist/providers/google.d.ts",
-			"import": "./dist/providers/google.js"
-		},
-		"./google-vertex": {
-			"types": "./dist/providers/google-vertex.d.ts",
-			"import": "./dist/providers/google-vertex.js"
-		},
-		"./mistral": {
-			"types": "./dist/providers/mistral.d.ts",
-			"import": "./dist/providers/mistral.js"
-		},
-		"./openai-codex-responses": {
-			"types": "./dist/providers/openai-codex-responses.d.ts",
-			"import": "./dist/providers/openai-codex-responses.js"
-		},
 		"./openai-completions": {
 			"types": "./dist/providers/openai-completions.d.ts",
 			"import": "./dist/providers/openai-completions.js"
 		},
-		"./openai-responses": {
-			"types": "./dist/providers/openai-responses.d.ts",
-			"import": "./dist/providers/openai-responses.js"
-		},
 		"./oauth": {
 			"types": "./dist/oauth.d.ts",
 			"import": "./dist/oauth.js"
-		},
-		"./bedrock-provider": {
-			"types": "./dist/bedrock-provider.d.ts",
-			"import": "./dist/bedrock-provider.js"
 		}
 	},
 	"bin": {
-		"pi-ai": "./dist/cli.js"
+		"npi-ai": "./dist/cli.js"
 	},
 	"files": [
 		"dist",
@@ -68,10 +36,6 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@anthropic-ai/sdk": "0.91.1",
-		"@aws-sdk/client-bedrock-runtime": "3.1048.0",
-		"@google/genai": "1.52.0",
-		"@mistralai/mistralai": "2.2.6",
 		"@opentelemetry/api": "1.9.0",
 		"@smithy/node-http-handler": "4.7.3",
 		"http-proxy-agent": "7.0.2",
@@ -81,20 +45,17 @@
 		"typebox": "1.1.38"
 	},
 	"keywords": [
-		"ai",
+		"noumena",
+		"kimi",
+		"coding-agent",
 		"llm",
-		"openai",
-		"anthropic",
-		"gemini",
-		"bedrock",
-		"unified",
 		"api"
 	],
 	"author": "Mario Zechner",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi.git",
+		"url": "git+https://github.com/gerred/npi.git",
 		"directory": "packages/ai"
 	},
 	"engines": {
@@ -103,6 +64,6 @@
 	"devDependencies": {
 		"@types/node": "24.12.4",
 		"canvas": "3.2.3",
-		"vitest": "3.2.4"
+		"vitest": "3.2.6"
 	}
 }

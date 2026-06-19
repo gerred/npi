@@ -78,7 +78,7 @@ async function main(): Promise<void> {
 
 	if (!command || command === "help" || command === "--help" || command === "-h") {
 		const providerList = PROVIDERS.map((p) => `  ${p.id.padEnd(20)} ${p.name}`).join("\n");
-		console.log(`Usage: npx @earendil-works/pi-ai <command> [provider]
+		console.log(`Usage: npx @gerred/npi-ai <command> [provider]
 
 Commands:
   login [provider]  Login to an OAuth provider
@@ -88,9 +88,9 @@ Providers:
 ${providerList}
 
 Examples:
-  npx @earendil-works/pi-ai login              # interactive provider selection
-  npx @earendil-works/pi-ai login anthropic    # login to specific provider
-  npx @earendil-works/pi-ai list               # list providers
+  npx @gerred/npi-ai login              # login to Noumena
+  npx @gerred/npi-ai login noumena      # login to Noumena
+  npx @gerred/npi-ai list               # list providers
 `);
 		return;
 	}
@@ -107,27 +107,33 @@ Examples:
 		let provider = args[1] as OAuthProviderId | undefined;
 
 		if (!provider) {
-			const rl = createInterface({ input: process.stdin, output: process.stdout });
-			console.log("Select a provider:\n");
-			for (let i = 0; i < PROVIDERS.length; i++) {
-				console.log(`  ${i + 1}. ${PROVIDERS[i].name}`);
-			}
-			console.log();
+			const onlyProvider = PROVIDERS.length === 1 ? PROVIDERS[0] : undefined;
+			if (onlyProvider) {
+				provider = onlyProvider.id;
+			} else {
+				const rl = createInterface({ input: process.stdin, output: process.stdout });
+				console.log("Select a provider:\n");
+				for (const [index, option] of PROVIDERS.entries()) {
+					console.log(`  ${index + 1}. ${option.name}`);
+				}
+				console.log();
 
-			const choice = await prompt(rl, `Enter number (1-${PROVIDERS.length}): `);
-			rl.close();
+				const choice = await prompt(rl, `Enter number (1-${PROVIDERS.length}): `);
+				rl.close();
 
-			const index = parseInt(choice, 10) - 1;
-			if (index < 0 || index >= PROVIDERS.length) {
-				console.error("Invalid selection");
-				process.exit(1);
+				const index = parseInt(choice, 10) - 1;
+				const selectedProvider = PROVIDERS[index];
+				if (!selectedProvider) {
+					console.error("Invalid selection");
+					process.exit(1);
+				}
+				provider = selectedProvider.id;
 			}
-			provider = PROVIDERS[index].id;
 		}
 
 		if (!PROVIDERS.some((p) => p.id === provider)) {
 			console.error(`Unknown provider: ${provider}`);
-			console.error(`Use 'npx @earendil-works/pi-ai list' to see available providers`);
+			console.error(`Use 'npx @gerred/npi-ai list' to see available providers`);
 			process.exit(1);
 		}
 
@@ -137,7 +143,7 @@ Examples:
 	}
 
 	console.error(`Unknown command: ${command}`);
-	console.error(`Use 'npx @earendil-works/pi-ai --help' for usage`);
+	console.error(`Use 'npx @gerred/npi-ai --help' for usage`);
 	process.exit(1);
 }
 

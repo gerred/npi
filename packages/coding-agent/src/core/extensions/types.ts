@@ -14,7 +14,7 @@ import type {
 	AgentToolUpdateCallback,
 	ThinkingLevel,
 	ToolExecutionMode,
-} from "@earendil-works/pi-agent-core";
+} from "@gerred/npi-agent-core";
 import type {
 	Api,
 	AssistantMessageEvent,
@@ -27,7 +27,7 @@ import type {
 	SimpleStreamOptions,
 	TextContent,
 	ToolResultMessage,
-} from "@earendil-works/pi-ai";
+} from "@gerred/npi-ai";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -38,7 +38,7 @@ import type {
 	OverlayHandle,
 	OverlayOptions,
 	TUI,
-} from "@earendil-works/pi-tui";
+} from "@gerred/npi-tui";
 import type { Static, TSchema } from "typebox";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import type { BashResult } from "../bash-executor.ts";
@@ -226,12 +226,12 @@ export interface ExtensionUIContext {
 	 * - `keybindings`: KeybindingsManager for app-level keybindings
 	 *
 	 * For full app keybinding support (escape, ctrl+d, model switching, etc.),
-	 * extend `CustomEditor` from `@earendil-works/pi-coding-agent` and call
+	 * extend `CustomEditor` from `@gerred/npi-coding-agent` and call
 	 * `super.handleInput(data)` for keys you don't handle.
 	 *
 	 * @example
 	 * ```ts
-	 * import { CustomEditor } from "@earendil-works/pi-coding-agent";
+	 * import { CustomEditor } from "@gerred/npi-coding-agent";
 	 *
 	 * class VimEditor extends CustomEditor {
 	 *   private mode: "normal" | "insert" = "insert";
@@ -1288,35 +1288,16 @@ export interface ExtensionAPI {
 	 * requiring a `/reload`.
 	 *
 	 * @example
-	 * // Register a new provider with custom models
-	 * pi.registerProvider("my-proxy", {
-	 *   baseUrl: "https://proxy.example.com",
-	 *   apiKey: "$PROXY_API_KEY",
-	 *   api: "anthropic-messages",
-	 *   models: [
-	 *     {
-	 *       id: "claude-sonnet-4-20250514",
-	 *       name: "Claude 4 Sonnet (proxy)",
-	 *       reasoning: false,
-	 *       input: ["text", "image"],
-	 *       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	 *       contextWindow: 200000,
-	 *       maxTokens: 16384
-	 *     }
-	 *   ]
-	 * });
-	 *
-	 * @example
-	 * // Override baseUrl for an existing provider
-	 * pi.registerProvider("anthropic", {
-	 *   baseUrl: "https://proxy.example.com"
+	 * // Override the Noumena base URL
+	 * pi.registerProvider("noumena", {
+	 *   baseUrl: "https://api.noumena.com/v1"
 	 * });
 	 *
 	 * @example
 	 * // Register provider with OAuth support
 	 * pi.registerProvider("corporate-ai", {
 	 *   baseUrl: "https://ai.corp.com",
-	 *   api: "openai-responses",
+	 *   api: "openai-completions",
 	 *   models: [...],
 	 *   oauth: {
 	 *     name: "Corporate AI (SSO)",
@@ -1386,9 +1367,9 @@ export interface ProviderConfig {
 
 /** Configuration for a model within a provider. */
 export interface ProviderModelConfig {
-	/** Model ID (e.g., "claude-sonnet-4-20250514"). */
+	/** Model ID (e.g., "kimi-2.7-coder"). */
 	id: string;
-	/** Display name (e.g., "Claude 4 Sonnet"). */
+	/** Display name (e.g., "Kimi 2.7 Coder"). */
 	name: string;
 	/** API type override for this model. */
 	api?: Api;

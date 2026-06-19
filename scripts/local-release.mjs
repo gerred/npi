@@ -6,10 +6,10 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const packages = [
-	{ directory: "packages/ai", name: "@earendil-works/pi-ai" },
-	{ directory: "packages/tui", name: "@earendil-works/pi-tui" },
-	{ directory: "packages/agent", name: "@earendil-works/pi-agent-core" },
-	{ directory: "packages/coding-agent", name: "@earendil-works/pi-coding-agent" },
+	{ directory: "packages/ai", name: "@gerred/npi-ai" },
+	{ directory: "packages/tui", name: "@gerred/npi-tui" },
+	{ directory: "packages/agent", name: "@gerred/npi-agent-core" },
+	{ directory: "packages/coding-agent", name: "@gerred/npi-coding-agent" },
 ];
 
 const CLI_NAME = "npi";
@@ -101,7 +101,7 @@ function isInsidePath(child, parent) {
 
 function prepareOutputDirectory(options, repoRoot) {
 	if (!options.outDir) {
-		return mkdtempSync(join(tmpdir(), "pi-local-release-"));
+		return mkdtempSync(join(tmpdir(), "npi-local-release-"));
 	}
 
 	const outDir = resolve(options.outDir);
@@ -188,7 +188,7 @@ const options = parseArgs();
 const repoRoot = process.cwd();
 const rootPackageJson = readPackageJson(repoRoot);
 
-if (rootPackageJson.name !== "pi-monorepo") {
+if (rootPackageJson.name !== "npi-monorepo") {
 	throw new Error("Run this script from the repository root");
 }
 

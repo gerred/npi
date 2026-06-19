@@ -1,4 +1,4 @@
-import { complete, createAssistantMessageEventStream, getModel, getProviders, Type } from "@earendil-works/pi-ai";
+import { complete, createAssistantMessageEventStream, getModel, getProviders, Type } from "@gerred/npi-ai";
 import {
 	Agent,
 	bashExecutionToText,
@@ -15,11 +15,11 @@ import {
 	streamProxy,
 	toError,
 	truncateHead,
-} from "@earendil-works/pi-agent-core";
+} from "@gerred/npi-agent-core";
 
 // Keep this entry browser-safe. It is bundled by scripts/check-browser-smoke.mjs
 // to catch accidental Node-only runtime imports in browser-facing package exports.
-const model = getModel("google", "gemini-2.5-flash");
+const model = getModel("noumena", "kimi-2.7-coder");
 const schema = Type.Object({ prompt: Type.String() });
 const stream = createAssistantMessageEventStream();
 

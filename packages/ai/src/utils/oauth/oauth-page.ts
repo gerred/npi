@@ -1,4 +1,4 @@
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z"/><path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z"/></svg>`;
+const NOUMENA_WORDMARK_URL = "https://code.noumena.com/logos/wordmark-light.svg";
 
 function escapeHtml(value: string): string {
 	return value
@@ -51,11 +51,11 @@ function renderPage(options: { title: string; heading: string; message: string; 
       align-items: center;
       justify-content: center;
     }
-    .logo {
-      width: 72px;
-      height: 72px;
+    .wordmark {
+      width: min(260px, 72vw);
+      height: auto;
       display: block;
-      margin-bottom: 24px;
+      margin-bottom: 28px;
     }
     h1 {
       margin: 0 0 10px;
@@ -82,7 +82,7 @@ function renderPage(options: { title: string; heading: string; message: string; 
 </head>
 <body>
   <main>
-    <div class="logo">${LOGO_SVG}</div>
+    <img class="wordmark" src="${NOUMENA_WORDMARK_URL}" alt="Noumena" />
     <h1>${heading}</h1>
     <p>${message}</p>
     ${details ? `<div class="details">${details}</div>` : ""}

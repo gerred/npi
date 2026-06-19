@@ -1,10 +1,16 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { findEnvKeys, getEnvApiKey } from "../src/env-api-keys.ts";
 
 const originalCopilotGitHubToken = process.env.COPILOT_GITHUB_TOKEN;
 const originalGhToken = process.env.GH_TOKEN;
 const originalGitHubToken = process.env.GITHUB_TOKEN;
-const originalZaiCodingCnApiKey = process.env.ZAI_CODING_CN_API_KEY;
+const originalNoumenaApiKey = process.env.NOUMENA_API_KEY;
+const originalNoumenaApiKeyFile = process.env.NOUMENA_API_KEY_FILE;
+
+let tempDirs: string[] = [];
 
 afterEach(() => {
 	if (originalCopilotGitHubToken === undefined) {
@@ -25,11 +31,22 @@ afterEach(() => {
 		process.env.GITHUB_TOKEN = originalGitHubToken;
 	}
 
-	if (originalZaiCodingCnApiKey === undefined) {
-		delete process.env.ZAI_CODING_CN_API_KEY;
+	if (originalNoumenaApiKey === undefined) {
+		delete process.env.NOUMENA_API_KEY;
 	} else {
-		process.env.ZAI_CODING_CN_API_KEY = originalZaiCodingCnApiKey;
+		process.env.NOUMENA_API_KEY = originalNoumenaApiKey;
 	}
+
+	if (originalNoumenaApiKeyFile === undefined) {
+		delete process.env.NOUMENA_API_KEY_FILE;
+	} else {
+		process.env.NOUMENA_API_KEY_FILE = originalNoumenaApiKeyFile;
+	}
+
+	for (const tempDir of tempDirs) {
+		rmSync(tempDir, { recursive: true, force: true });
+	}
+	tempDirs = [];
 });
 
 describe("environment API keys", () => {
@@ -42,19 +59,31 @@ describe("environment API keys", () => {
 		expect(getEnvApiKey("github-copilot")).toBeUndefined();
 	});
 
-	it("resolves GitHub Copilot credentials from COPILOT_GITHUB_TOKEN", () => {
+	it("does not expose GitHub Copilot credentials as built-in npi credentials", () => {
 		process.env.COPILOT_GITHUB_TOKEN = "copilot-token";
 		process.env.GH_TOKEN = "gh-token";
 		process.env.GITHUB_TOKEN = "github-token";
 
-		expect(findEnvKeys("github-copilot")).toEqual(["COPILOT_GITHUB_TOKEN"]);
-		expect(getEnvApiKey("github-copilot")).toBe("copilot-token");
+		expect(findEnvKeys("github-copilot")).toBeUndefined();
+		expect(getEnvApiKey("github-copilot")).toBeUndefined();
 	});
 
-	it("resolves ZAI China Coding Plan credentials from ZAI_CODING_CN_API_KEY", () => {
-		process.env.ZAI_CODING_CN_API_KEY = "zai-coding-cn-token";
+	it("resolves Noumena credentials from NOUMENA_API_KEY", () => {
+		process.env.NOUMENA_API_KEY = "noumena-token";
 
-		expect(findEnvKeys("zai-coding-cn")).toEqual(["ZAI_CODING_CN_API_KEY"]);
-		expect(getEnvApiKey("zai-coding-cn")).toBe("zai-coding-cn-token");
+		expect(findEnvKeys("noumena")).toEqual(["NOUMENA_API_KEY"]);
+		expect(getEnvApiKey("noumena")).toBe("noumena-token");
+	});
+
+	it("resolves Noumena credentials from NOUMENA_API_KEY_FILE", () => {
+		delete process.env.NOUMENA_API_KEY;
+		const tempDir = mkdtempSync(join(tmpdir(), "pi-noumena-key-"));
+		tempDirs.push(tempDir);
+		const apiKeyFile = join(tempDir, "api_key");
+		writeFileSync(apiKeyFile, "noumena-file-token\n", "utf-8");
+		process.env.NOUMENA_API_KEY_FILE = apiKeyFile;
+
+		expect(findEnvKeys("noumena")).toEqual(["NOUMENA_API_KEY_FILE"]);
+		expect(getEnvApiKey("noumena")).toBe("noumena-file-token");
 	});
 });

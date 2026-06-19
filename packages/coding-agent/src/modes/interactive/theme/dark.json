@@ -1,5 +1,5 @@
 {
-	"$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
+	"$schema": "https://raw.githubusercontent.com/gerred/npi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
 	"name": "dark",
 	"vars": {
 		"cyan": "#00d7ff",
@@ -11,8 +11,8 @@
 		"gray": "#808080",
 		"dimGray": "#666666",
 		"darkGray": "#505050",
-		"accent": "#8abeb7",
-		"selectedBg": "#3a3a4a",
+		"orange": "#ff9101",
+		"selectedBg": "#3c2f20",
 		"userMsgBg": "#343541",
 		"toolPendingBg": "#282832",
 		"toolSuccessBg": "#283228",
@@ -20,9 +20,9 @@
 		"customMsgBg": "#2d2838"
 	},
 	"colors": {
-		"accent": "accent",
+		"accent": "orange",
 		"border": "blue",
-		"borderAccent": "cyan",
+		"borderAccent": "orange",
 		"borderMuted": "darkGray",
 		"success": "green",
 		"error": "red",
@@ -47,13 +47,13 @@
 		"mdHeading": "#f0c674",
 		"mdLink": "#81a2be",
 		"mdLinkUrl": "dimGray",
-		"mdCode": "accent",
+		"mdCode": "orange",
 		"mdCodeBlock": "green",
 		"mdCodeBlockBorder": "gray",
 		"mdQuote": "gray",
 		"mdQuoteBorder": "gray",
 		"mdHr": "gray",
-		"mdListBullet": "accent",
+		"mdListBullet": "orange",
 
 		"toolDiffAdded": "green",
 		"toolDiffRemoved": "red",

@@ -1,9 +1,10 @@
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { type AutocompleteProvider, CombinedAutocompleteProvider } from "@earendil-works/pi-tui";
+import { type AutocompleteProvider, CombinedAutocompleteProvider } from "@gerred/npi-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import { type Component, Container, type Focusable, TUI } from "../../tui/src/tui.ts";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
+import { AuthStorage } from "../src/core/auth-storage.ts";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.ts";
 import type { SourceInfo } from "../src/core/source-info.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
@@ -134,6 +135,41 @@ describe("InteractiveMode.setToolsExpanded", () => {
 		expect(header.setExpanded).toHaveBeenCalledWith(true);
 		expect(chatChild.setExpanded).toHaveBeenCalledWith(true);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("InteractiveMode /logout", () => {
+	test("logs out directly when only one provider has stored credentials", async () => {
+		const authStorage = AuthStorage.inMemory({
+			noumena: { type: "api_key", key: "test-key" },
+		});
+		const fakeThis = Object.assign(Object.create(InteractiveMode.prototype), {
+			showSelector: vi.fn(),
+			showStatus: vi.fn(),
+			showError: vi.fn(),
+			updateAvailableProviderCount: vi.fn(async () => {}),
+			ui: { requestRender: vi.fn() },
+		});
+		Object.defineProperty(fakeThis, "session", {
+			value: {
+				modelRegistry: {
+					authStorage,
+					refresh: vi.fn(),
+					getProviderDisplayName: vi.fn(() => "Noumena"),
+				},
+			},
+			configurable: true,
+		});
+
+		await (InteractiveMode as any).prototype.showOAuthSelector.call(fakeThis, "logout");
+
+		expect(fakeThis.showSelector).not.toHaveBeenCalled();
+		expect(authStorage.get("noumena")).toBeUndefined();
+		expect(fakeThis.session.modelRegistry.refresh).toHaveBeenCalledTimes(1);
+		expect(fakeThis.updateAvailableProviderCount).toHaveBeenCalledTimes(1);
+		expect(fakeThis.showStatus).toHaveBeenCalledWith(
+			"Removed stored API key for Noumena. Environment variables and models.json config are unchanged.",
+		);
 	});
 });
 
