@@ -110,6 +110,10 @@ for (const pkg of packages) {
 		continue;
 	}
 
-	run("npm", ["publish", "--access", "public", "--provenance", "--ignore-scripts"], { cwd: pkg.directory });
+	const publishArgs = ["publish", "--access", "public", "--ignore-scripts"];
+	if (process.env.GITHUB_ACTIONS === "true") {
+		publishArgs.splice(3, 0, "--provenance");
+	}
+	run("npm", publishArgs, { cwd: pkg.directory });
 	console.log();
 }
